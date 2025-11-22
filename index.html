@@ -949,6 +949,22 @@
             }
         }
     </style>
+    <!-- Google Analytics 4 -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-JTM2VSS2NC"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-JTM2VSS2NC', {
+            page_title: '文字貪食蛇 - 早餐版',
+            page_location: window.location.href
+        });
+        
+        // 初始化遊戲開始時間，用於追蹤遊戲時長
+        window.gameStartTime = null;
+        window.gameSessionId = null;
+    </script>
+    
     <script src="https://cdn.jsdelivr.net/npm/p5@1.9.0/lib/p5.min.js"></script>
     <script src="./items.js"></script>
     <script src="./ending.js"></script>

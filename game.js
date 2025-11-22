@@ -346,6 +346,22 @@ function calculateOptimalCanvasSize() {
     console.log(`  最終Canvas：${canvasWidth}x${canvasHeight}px`);
     console.log(`  螢幕寬度利用率：${screenUtilization}%`);
 
+    // 追蹤響應式設計效果
+    if (typeof gtag !== 'undefined') {
+        gtag('event', 'responsive_design', {
+            'device_type': deviceType,
+            'window_width': windowWidth,
+            'window_height': windowHeight,
+            'canvas_width': canvasWidth,
+            'canvas_height': canvasHeight,
+            'cell_size': optimalCellSize,
+            'screen_utilization': parseFloat(screenUtilization),
+            'horizontal_padding': horizontalPadding,
+            'vertical_reduction': verticalReduction,
+            'is_optimal_size': optimalCellSize >= minCellSize && screenUtilization >= 80
+        });
+    }
+
     // 提供設備特定的優化建議和警告
     if (isMobile) {
         if (optimalCellSize < 16) {
@@ -452,6 +468,8 @@ function setupGameButtons() {
 }
 
 function setup() {
+    const setupStartTime = performance.now();
+    
     try {
         if (!initializeDependencies()) return;
 
@@ -483,11 +501,37 @@ function setup() {
 
         noLoop();
 
+        // 計算初始化時間並追蹤
+        const setupDuration = Math.round(performance.now() - setupStartTime);
+        if (typeof gtag !== 'undefined') {
+            gtag('event', 'game_initialized', {
+                'setup_duration_ms': setupDuration,
+                'canvas_width': width,
+                'canvas_height': height,
+                'cell_size': cell,
+                'device_pixel_ratio': window.devicePixelRatio || 1,
+                'user_agent': navigator.userAgent.substring(0, 100) // 限制長度
+            });
+        }
+
         console.log('遊戲初始化完成');
         validateGameConfig();
         logColorVerification();
+        
+        // 設置全域錯誤處理
+        setupErrorTracking();
+        
     } catch (error) {
         console.error('遊戲初始化時發生錯誤:', error);
+        
+        // 追蹤初始化錯誤
+        if (typeof gtag !== 'undefined') {
+            gtag('event', 'initialization_error', {
+                'error_message': error.message,
+                'error_stack': error.stack ? error.stack.substring(0, 500) : 'no stack',
+                'setup_duration_ms': Math.round(performance.now() - setupStartTime)
+            });
+        }
     }
 }
 
@@ -552,6 +596,24 @@ function startGame() {
     // 顯示倒數視窗
     DOMManager.show('countdownScreen');
     DOMManager.setContent('countdownNumber', 3);
+
+    // 生成遊戲會話 ID 和記錄開始時間
+    window.gameSessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    window.gameStartTime = Date.now();
+
+    // 追蹤遊戲開始事件
+    if (typeof gtag !== 'undefined') {
+        const deviceInfo = window.detectDeviceAndSetBackground ? window.detectDeviceAndSetBackground() : { deviceType: 'Unknown' };
+        gtag('event', 'game_start', {
+            'custom_difficulty': difficulty,
+            'device_type': deviceInfo.deviceType,
+            'screen_width': windowWidth,
+            'screen_height': windowHeight,
+            'session_id': window.gameSessionId,
+            'game_version': 'v0.2'
+        });
+        console.log('GA: 追蹤遊戲開始事件', { difficulty, deviceType: deviceInfo.deviceType });
+    }
 
     let count = 3;
     let countdownInterval = setInterval(() => {
@@ -831,6 +893,28 @@ function handleFoodConsumption(food) {
     collectedChars.push(char);
     collectedCharTypes.push(foodType);
 
+    // 追蹤食物收集事件
+    if (typeof gtag !== 'undefined') {
+        const nutrition = ITEMS.nutrition[char] || {};
+        const effect = ITEMS.effects[char] || {};
+        
+        gtag('event', 'food_collected', {
+            'session_id': window.gameSessionId,
+            'food_character': char,
+            'food_type': foodType,
+            'current_score': ate.length + 1,
+            'current_length': snake.length,
+            'carb_value': nutrition.carb || 0,
+            'protein_value': nutrition.protein || 0,
+            'caffeine_value': nutrition.caffeine || 0,
+            'fat_value': nutrition.fat || 0,
+            'fiber_value': nutrition.fiber || 0,
+            'speed_multiplier': effect.speedMul || 1,
+            'effect_duration': effect.durationMs || 0,
+            'game_time_remaining': timer
+        });
+    }
+
     // 生成新食物
     spawnFood();
 
@@ -940,6 +1024,11 @@ function gameOver() {
     gameState = 'OVER';
     isPaused = false; // 重置暫停狀態
 
+    // 計算遊戲時長
+    const gameEndTime = Date.now();
+    const gameDuration = window.gameStartTime ? Math.round((gameEndTime - window.gameStartTime) / 1000) : 0;
+    const totalScore = ate.length;
+
     try {
         // 安全地分析結果
         let tag, msg;
@@ -956,6 +1045,42 @@ function gameOver() {
             else tag = "balanced";
 
             msg = Ending.line(tag);
+        }
+
+        // 追蹤遊戲結束事件
+        if (typeof gtag !== 'undefined') {
+            // 計算各類型食物的數量
+            const foodTypeCounts = {};
+            ate.forEach(char => {
+                const foodType = getFoodType(char);
+                foodTypeCounts[foodType] = (foodTypeCounts[foodType] || 0) + 1;
+            });
+
+            gtag('event', 'game_end', {
+                'session_id': window.gameSessionId,
+                'game_duration': gameDuration,
+                'score': totalScore,
+                'difficulty': difficulty,
+                'nutrition_type': tag,
+                'carb_total': stat.carb || 0,
+                'protein_total': stat.protein || 0,
+                'caffeine_total': stat.caffeine || 0,
+                'fat_total': stat.fat || 0,
+                'fiber_total': stat.fiber || 0,
+                'carb_foods_count': foodTypeCounts.carb || 0,
+                'protein_foods_count': foodTypeCounts.protein || 0,
+                'caffeine_foods_count': foodTypeCounts.caffeine || 0,
+                'default_foods_count': foodTypeCounts.default || 0,
+                'snake_final_length': snake.length
+            });
+            
+            console.log('GA: 追蹤遊戲結束事件', { 
+                score: totalScore, 
+                duration: gameDuration, 
+                difficulty, 
+                nutritionType: tag,
+                foodTypeCounts 
+            });
         }
 
         // 列表
@@ -1140,18 +1265,50 @@ function detectAndSetFont() {
         "sans-serif"
     ];
 
+    let detectedFont = 'sans-serif';
+    let isLineSeedAvailable = false;
+    let firstAvailableFont = null;
+
     for (let font of testFonts) {
         console.log(`正在檢測字體: ${font}`);
         if (isFontAvailable(font)) {
             console.log(`✅ 找到可用字體: ${font}`);
-            return font;
+            
+            if (!firstAvailableFont) {
+                firstAvailableFont = font;
+                detectedFont = font;
+            }
+            
+            // 檢查是否為 LINE SEED 字體
+            if (font.includes('LINE Seed')) {
+                isLineSeedAvailable = true;
+            }
+            
+            // 如果找到 LINE SEED 字體，優先使用
+            if (font.includes('LINE Seed')) {
+                detectedFont = font;
+                break;
+            }
         } else {
             console.log(`❌ 字體不可用: ${font}`);
         }
     }
 
-    console.log('❌ 沒有找到任何指定字體，使用預設字體: sans-serif');
-    return 'sans-serif';
+    // 追蹤字體檢測結果
+    if (typeof gtag !== 'undefined') {
+        gtag('event', 'font_detection', {
+            'detected_font': detectedFont,
+            'line_seed_available': isLineSeedAvailable,
+            'first_available_font': firstAvailableFont || 'none',
+            'total_fonts_tested': testFonts.length
+        });
+    }
+
+    if (!firstAvailableFont) {
+        console.log('❌ 沒有找到任何指定字體，使用預設字體: sans-serif');
+    }
+    
+    return detectedFont;
 }
 
 function calculateResponsiveParameters() {
@@ -1340,6 +1497,17 @@ function pauseGame() {
     if (gameState !== 'PLAYING') return;
 
     noLoop();
+    
+    // 追蹤暫停事件
+    if (typeof gtag !== 'undefined') {
+        gtag('event', 'game_paused', {
+            'session_id': window.gameSessionId,
+            'current_score': ate.length,
+            'time_remaining': timer,
+            'snake_length': snake.length
+        });
+    }
+    
     console.log('遊戲已暫停 - 按P鍵繼續');
 }
 
@@ -1347,6 +1515,17 @@ function resumeGame() {
     if (gameState !== 'PLAYING') return;
 
     loop();
+    
+    // 追蹤恢復事件
+    if (typeof gtag !== 'undefined') {
+        gtag('event', 'game_resumed', {
+            'session_id': window.gameSessionId,
+            'current_score': ate.length,
+            'time_remaining': timer,
+            'snake_length': snake.length
+        });
+    }
+    
     console.log('遊戲已繼續');
 }
 
@@ -1374,7 +1553,17 @@ function setupDifficultySelector() {
             button.classList.add('selected');
 
             // 更新難度設定
+            const oldDifficulty = difficulty;
             difficulty = button.getAttribute('data-difficulty');
+
+            // 追蹤難度變更事件
+            if (typeof gtag !== 'undefined' && oldDifficulty !== difficulty) {
+                gtag('event', 'difficulty_changed', {
+                    'previous_difficulty': oldDifficulty,
+                    'new_difficulty': difficulty,
+                    'difficulty_name': DIFFICULTY_SETTINGS[difficulty].name
+                });
+            }
 
             console.log(`難度已變更為: ${DIFFICULTY_SETTINGS[difficulty].name}`);
         });
@@ -1460,6 +1649,14 @@ function setupHelpButtons() {
 // 顯示說明頁
 function showHelpScreen() {
     console.log(`顯示說明頁，上一頁：${previousScreen}`);
+
+    // 追蹤說明頁訪問事件
+    if (typeof gtag !== 'undefined') {
+        gtag('event', 'help_screen_opened', {
+            'previous_screen': previousScreen,
+            'session_id': window.gameSessionId || 'no_session'
+        });
+    }
 
     // 隱藏所有其他畫面
     const startScreen = select('#start-screen');
@@ -1600,4 +1797,56 @@ function generateFoodHelp() {
     });
 
     console.log('食物說明內容已生成');
+}
+
+// 設置錯誤追蹤
+function setupErrorTracking() {
+    // 追蹤 JavaScript 運行時錯誤
+    window.addEventListener('error', (event) => {
+        if (typeof gtag !== 'undefined') {
+            gtag('event', 'javascript_error', {
+                'error_message': event.message,
+                'error_filename': event.filename,
+                'error_line': event.lineno,
+                'error_column': event.colno,
+                'error_stack': event.error ? event.error.stack.substring(0, 500) : 'no stack',
+                'session_id': window.gameSessionId || 'no_session',
+                'game_state': gameState,
+                'current_score': ate.length
+            });
+        }
+        console.error('JavaScript Error tracked:', event);
+    });
+
+    // 追蹤 Promise 拒絕錯誤
+    window.addEventListener('unhandledrejection', (event) => {
+        if (typeof gtag !== 'undefined') {
+            gtag('event', 'promise_rejection', {
+                'error_message': event.reason ? event.reason.toString() : 'Unknown promise rejection',
+                'session_id': window.gameSessionId || 'no_session',
+                'game_state': gameState,
+                'current_score': ate.length
+            });
+        }
+        console.error('Promise Rejection tracked:', event);
+    });
+
+    // 追蹤頁面離開時的遊戲狀態（用於分析玩家流失）
+    window.addEventListener('beforeunload', () => {
+        if (typeof gtag !== 'undefined' && gameState === 'PLAYING') {
+            const currentTime = Date.now();
+            const playDuration = window.gameStartTime ? Math.round((currentTime - window.gameStartTime) / 1000) : 0;
+            
+            gtag('event', 'game_abandoned', {
+                'session_id': window.gameSessionId,
+                'play_duration': playDuration,
+                'current_score': ate.length,
+                'time_remaining': timer,
+                'difficulty': difficulty,
+                'snake_length': snake.length
+            });
+        }
+    });
+
+    console.log('錯誤追蹤系統已設置');
 }
